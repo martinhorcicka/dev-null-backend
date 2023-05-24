@@ -8,12 +8,12 @@ use crate::error::Error;
 
 pub type SharedConfig = Arc<Mutex<Config>>;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     #[serde(rename = "receiverEmail")]
-    receiver_email: String,
+    pub receiver_email: String,
     #[serde(rename = "emailSubject")]
-    email_subject: String,
+    pub email_subject: String,
 }
 
 impl Default for Config {
