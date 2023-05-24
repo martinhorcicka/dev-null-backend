@@ -1,4 +1,9 @@
-use std::{fmt::Display, path::Path, sync::Arc, time::Duration};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use notify::{event::ModifyKind, EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
@@ -72,8 +77,12 @@ async fn watch_config_file(config: SharedConfig) -> ! {
     })
     .expect("config watcher created");
 
+    let config_path = std::env::var("CONFIG_DIR").expect("CONFIG_DIR should be set");
+    let mut config_path = PathBuf::from(config_path);
+    config_path.push("config.json");
+
     config_watcher
-        .watch(Path::new("config.json"), RecursiveMode::Recursive)
+        .watch(&config_path, RecursiveMode::Recursive)
         .expect("Config watching could not be established. Does config.json exist?");
 
     while let Some(res) = rx.recv().await {
