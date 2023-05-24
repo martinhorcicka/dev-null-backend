@@ -31,14 +31,24 @@ fn get_credentials() -> Result<Credentials, String> {
     Ok(Credentials::new(username, password))
 }
 
-fn create_message(_data: SendEmailData, config: Config) -> Result<Message, String> {
-    let email = std::env::var("SENDER_EMAIL").map_err(to_string)?;
+fn create_message(
+    SendEmailData {
+        first_name,
+        last_name,
+        email,
+        body,
+    }: SendEmailData,
+    config: Config,
+) -> Result<Message, String> {
+    let sender_email = std::env::var("SENDER_EMAIL").map_err(to_string)?;
     Message::builder()
-        .from(email.parse().map_err(to_string)?)
+        .from(sender_email.parse().map_err(to_string)?)
         .to(config.receiver_email.parse().map_err(to_string)?)
         .subject(config.email_subject.clone())
         .header(ContentType::TEXT_PLAIN)
-        .body(config.to_string())
+        .body(format!(
+            "From: {first_name} {last_name} <{email}>\n\n\n{body}"
+        ))
         .map_err(to_string)
 }
 
@@ -58,7 +68,14 @@ where
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SendEmailData {}
+pub struct SendEmailData {
+    #[serde(rename = "firstName")]
+    first_name: String,
+    #[serde(rename = "lastName")]
+    last_name: String,
+    email: String,
+    body: String,
+}
 
 #[derive(Debug, Default, Serialize)]
 pub struct SendEmailResponse {
