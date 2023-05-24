@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::Path, sync::Arc};
+use std::{fmt::Display, path::Path, sync::Arc, time::Duration};
 
 use notify::{event::ModifyKind, EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
@@ -41,7 +41,7 @@ impl From<Config> for SharedConfig {
     }
 }
 
-pub async fn watch_config(config: SharedConfig) {
+pub async fn watch_config(config: SharedConfig) -> ! {
     match load_config() {
         Ok(new_config) => *config.lock().await = new_config,
         Err(err) => println!(
@@ -49,6 +49,17 @@ pub async fn watch_config(config: SharedConfig) {
             Config::default()
         ),
     }
+
+    loop {
+        println!("Starting config.json watch.");
+        if let Some(_) = tokio::spawn(watch_config_file(config.clone())).await.err() {
+            println!("Watch config error. Restarting in 10 seconds..");
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+    }
+}
+
+async fn watch_config_file(config: SharedConfig) -> ! {
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
     let mut config_watcher = notify::recommended_watcher(move |res| {
         if let Err(send_err) = tx.blocking_send(res) {
@@ -77,6 +88,8 @@ pub async fn watch_config(config: SharedConfig) {
             Err(err) => println!("Error: {err:?}"),
         }
     }
+
+    loop {}
 }
 
 fn load_config() -> Result<Config, Error> {
