@@ -31,7 +31,7 @@ fn get_credentials() -> Result<Credentials, String> {
     Ok(Credentials::new(username, password))
 }
 
-fn create_message(data: SendEmailData, config: Config) -> Result<Message, String> {
+fn create_message(_data: SendEmailData, config: Config) -> Result<Message, String> {
     let email = std::env::var("SENDER_EMAIL").map_err(to_string)?;
     Message::builder()
         .from(email.parse().map_err(to_string)?)

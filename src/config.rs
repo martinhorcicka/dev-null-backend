@@ -52,7 +52,11 @@ pub async fn watch_config(config: SharedConfig) -> ! {
 
     loop {
         println!("Starting config.json watch.");
-        if let Some(_) = tokio::spawn(watch_config_file(config.clone())).await.err() {
+        if tokio::spawn(watch_config_file(config.clone()))
+            .await
+            .err()
+            .is_some()
+        {
             println!("Watch config error. Restarting in 10 seconds..");
             tokio::time::sleep(Duration::from_secs(10)).await;
         }
@@ -89,7 +93,9 @@ async fn watch_config_file(config: SharedConfig) -> ! {
         }
     }
 
-    loop {}
+    loop {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 fn load_config() -> Result<Config, Error> {
