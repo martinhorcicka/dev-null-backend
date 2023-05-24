@@ -1,6 +1,6 @@
 use std::{
     fmt::Display,
-    path::{Path, PathBuf},
+    path::{PathBuf},
     sync::Arc,
     time::Duration,
 };
