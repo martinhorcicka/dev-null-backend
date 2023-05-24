@@ -38,13 +38,15 @@ fn create_message(
         email,
         body,
     }: SendEmailData,
-    config: Config,
+    _config: Config,
 ) -> Result<Message, String> {
     let sender_email = std::env::var("SENDER_EMAIL").map_err(to_string)?;
+    let receiver_email = std::env::var("RECEIVER_EMAIL").map_err(to_string)?;
+    let email_subject = std::env::var("RECEIVER_EMAIL_SUBJECT").map_err(to_string)?;
     Message::builder()
         .from(sender_email.parse().map_err(to_string)?)
-        .to(config.receiver_email.parse().map_err(to_string)?)
-        .subject(config.email_subject.clone())
+        .to(receiver_email.parse().map_err(to_string)?)
+        .subject(email_subject.clone())
         .header(ContentType::TEXT_PLAIN)
         .body(format!(
             "From: {first_name} {last_name} <{email}>\n\n\n{body}"

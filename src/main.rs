@@ -5,7 +5,7 @@ mod send_email;
 use std::net::SocketAddr;
 
 use axum::{extract::State, routing::post, Json, Router};
-use config::{watch_config, Config, SharedConfig};
+use config::{Config, SharedConfig};
 use send_email::{SendEmailData, SendEmailResponse};
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
@@ -27,7 +27,7 @@ async fn main() {
         .route("/send_email", post(send_email))
         .with_state(state.clone());
 
-    tokio::spawn(watch_config(state));
+    //tokio::spawn(watch_config(state));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
     tracing::debug!("listening on {addr}");

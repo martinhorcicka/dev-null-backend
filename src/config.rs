@@ -1,6 +1,6 @@
 use std::{fmt::Display, path::PathBuf, sync::Arc, time::Duration};
 
-use notify::{event::ModifyKind, EventKind, RecursiveMode, Watcher};
+use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
@@ -64,7 +64,7 @@ pub async fn watch_config(config: SharedConfig) -> ! {
 }
 
 async fn watch_config_file(config: SharedConfig) -> ! {
-    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(10);
     let mut config_watcher = notify::recommended_watcher(move |res| {
         if let Err(send_err) = tx.blocking_send(res) {
             println!("failed to send the event: {send_err:?}");
@@ -83,7 +83,7 @@ async fn watch_config_file(config: SharedConfig) -> ! {
     while let Some(res) = rx.recv().await {
         match res {
             Ok(event) => {
-                if let EventKind::Modify(ModifyKind::Any) = event.kind {
+                if let EventKind::Modify(_) = event.kind {
                     match load_config() {
                         Ok(new_config) => {
                             println!("Updating config with {new_config}");
@@ -97,9 +97,7 @@ async fn watch_config_file(config: SharedConfig) -> ! {
         }
     }
 
-    loop {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    panic!("Stopping...");
 }
 
 fn load_config() -> Result<Config, Error> {
