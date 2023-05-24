@@ -1,9 +1,4 @@
-use std::{
-    fmt::Display,
-    path::{PathBuf},
-    sync::Arc,
-    time::Duration,
-};
+use std::{fmt::Display, path::PathBuf, sync::Arc, time::Duration};
 
 use notify::{event::ModifyKind, EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
@@ -108,6 +103,8 @@ async fn watch_config_file(config: SharedConfig) -> ! {
 }
 
 fn load_config() -> Result<Config, Error> {
-    let config_string = std::fs::read_to_string("config.json")?;
+    let mut config_path = PathBuf::from(std::env::var("CONFIG_DIR").expect("config dir not set"));
+    config_path.push("config.json");
+    let config_string = std::fs::read_to_string(config_path)?;
     Ok(serde_json::from_str(&config_string)?)
 }
