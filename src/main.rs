@@ -4,8 +4,7 @@ mod send_email;
 
 use std::net::SocketAddr;
 
-use axum::{extract::State, routing::post, Json, Router};
-use config::{Config, SharedConfig};
+use axum::{routing::post, Json, Router};
 use send_email::{SendEmailData, SendEmailResponse};
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
@@ -21,14 +20,7 @@ async fn main() {
 
     dotenv::dotenv().ok();
 
-    let state: SharedConfig = Config::default().into();
-
-    let app = Router::new()
-        .route("/send_email", post(send_email))
-        .with_state(state.clone());
-
-    //tokio::spawn(watch_config(state));
-
+    let app = Router::new().route("/send_email", post(send_email));
     let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
     tracing::debug!("listening on {addr}");
     axum_server::bind(addr)
@@ -37,12 +29,6 @@ async fn main() {
         .unwrap();
 }
 
-async fn send_email(
-    State(config): State<SharedConfig>,
-    Json(send_email_data): Json<SendEmailData>,
-) -> Json<SendEmailResponse> {
-    Json(send_email::send_email(
-        send_email_data,
-        config.lock().await.clone(),
-    ))
+async fn send_email(Json(send_email_data): Json<SendEmailData>) -> Json<SendEmailResponse> {
+    Json(send_email::send_email(send_email_data))
 }

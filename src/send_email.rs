@@ -4,10 +4,8 @@ use lettre::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
-
-pub fn send_email(data: SendEmailData, config: Config) -> SendEmailResponse {
-    match send_email_impl(data, config) {
+pub fn send_email(data: SendEmailData) -> SendEmailResponse {
+    match send_email_impl(data) {
         Ok(_) => Default::default(),
         Err(error) => SendEmailResponse {
             status: Status::KO,
@@ -16,9 +14,9 @@ pub fn send_email(data: SendEmailData, config: Config) -> SendEmailResponse {
     }
 }
 
-fn send_email_impl(data: SendEmailData, config: Config) -> Result<(), String> {
+fn send_email_impl(data: SendEmailData) -> Result<(), String> {
     let credentials = get_credentials()?;
-    let message = create_message(data, config)?;
+    let message = create_message(data)?;
     let mailer = create_mailer(credentials)?;
 
     mailer.send(&message).map_err(to_string)?;
@@ -38,7 +36,6 @@ fn create_message(
         email,
         body,
     }: SendEmailData,
-    _config: Config,
 ) -> Result<Message, String> {
     let sender_email = std::env::var("SENDER_EMAIL").map_err(to_string)?;
     let receiver_email = std::env::var("RECEIVER_EMAIL").map_err(to_string)?;
