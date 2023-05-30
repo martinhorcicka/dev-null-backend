@@ -67,9 +67,10 @@ where
 {
     let (status, response) = match route_func() {
         Ok(status_response) => ("ok".to_string(), Some(status_response)),
-        Err(err) => match err {
-            error => (format!("{error:?}"), None),
-        },
+        Err(err) => {
+            let error = err;
+            (format!("{error:?}"), None)
+        }
     };
 
     Json(Response { status, response })

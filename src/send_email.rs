@@ -43,7 +43,7 @@ fn create_message(
     Message::builder()
         .from(sender_email.parse().map_err(to_string)?)
         .to(receiver_email.parse().map_err(to_string)?)
-        .subject(email_subject.clone())
+        .subject(email_subject)
         .header(ContentType::TEXT_PLAIN)
         .body(format!(
             "From: {first_name} {last_name} <{email}>\n\n\n{body}"
