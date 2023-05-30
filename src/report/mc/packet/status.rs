@@ -30,6 +30,7 @@ impl From<StatusRequest> for Packet {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusResponse {
     pub previews_chat: bool,
     pub enforces_secure_chat: bool,
@@ -58,12 +59,14 @@ pub struct Version {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ForgeData {
     pub fml_network_version: i32,
     pub d: ForgeDataD,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ForgeDataD {
     pub truncated: bool,
     pub mods_size: u16,
