@@ -1,4 +1,3 @@
-mod config;
 mod error;
 mod report;
 mod send_email;
