@@ -37,7 +37,7 @@ pub fn ping(payload: i64) -> Result<PingResponse> {
 
     PingRequest { payload }.send_packet(stream)?;
 
-    Packet::recv(stream)?.try_into().map_err(Error::Generic)
+    Packet::recv(stream)?.try_into()
 }
 
 fn create_tcp_stream() -> Result<TcpStream> {

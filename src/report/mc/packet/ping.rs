@@ -1,7 +1,7 @@
 use bytes::{Buf, BufMut};
 use serde::Serialize;
 
-use crate::report::mc::bytes::Bytes;
+use crate::{error::Error, report::mc::bytes::Bytes};
 
 use super::{Packet, SendPacket};
 
@@ -25,7 +25,7 @@ pub struct PingResponse {
 }
 
 impl TryFrom<Packet> for PingResponse {
-    type Error = String;
+    type Error = Error;
 
     fn try_from(mut packet: Packet) -> Result<Self, Self::Error> {
         match packet.id {
@@ -33,7 +33,7 @@ impl TryFrom<Packet> for PingResponse {
                 let payload = packet.data.get_i64();
                 Ok(Self { payload })
             }
-            _ => Err("wrong packet id".to_string()),
+            _ => Err(Error::Generic("wrong packet id".to_owned())),
         }
     }
 }

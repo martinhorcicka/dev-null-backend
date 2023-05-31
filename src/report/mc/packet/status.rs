@@ -143,9 +143,7 @@ impl TryFrom<Packet> for StatusResponse {
         }
 
         let unparsed_status_response: UnparsedStatusResponse =
-            serde_json::from_str(&packet.data.get_string())
-                .map_err(|err| err.to_string())
-                .map_err(Error::Generic)?;
+            serde_json::from_str(&packet.data.get_string())?;
 
         Ok(unparsed_status_response.into())
     }
