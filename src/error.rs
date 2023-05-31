@@ -1,41 +1,35 @@
 use std::{env::VarError, net::AddrParseError, num::ParseIntError};
 
-#[derive(Debug)]
+use lettre::address::AddressError;
+use serde::Serialize;
+
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("generic error: {0}")]
     Generic(String),
-    Io(std::io::Error),
-    Serde(serde_json::Error),
-    Var(VarError),
-    AddrParse(AddrParseError),
-    ParseInt(ParseIntError),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("error parsing json: {0}")]
+    Serde(#[from] serde_json::Error),
+    #[error("generic email error: {0}")]
+    Lettre(#[from] lettre::error::Error),
+    #[error("smtp error: {0}")]
+    LettreSmtp(#[from] lettre::transport::smtp::Error),
+    #[error("environment variable error: {0}")]
+    Var(#[from] VarError),
+    #[error("address parsing error: {0}")]
+    AddrParse(#[from] AddrParseError),
+    #[error("email address error: {0}")]
+    Address(#[from] AddressError),
+    #[error("int parsing error: {0}")]
+    ParseInt(#[from] ParseIntError),
 }
 
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Serde(value)
-    }
-}
-
-impl From<VarError> for Error {
-    fn from(value: std::env::VarError) -> Self {
-        Self::Var(value)
-    }
-}
-
-impl From<AddrParseError> for Error {
-    fn from(value: AddrParseError) -> Self {
-        Self::AddrParse(value)
-    }
-}
-
-impl From<ParseIntError> for Error {
-    fn from(value: ParseIntError) -> Self {
-        Self::ParseInt(value)
+impl Serialize for Error {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{self}"))
     }
 }

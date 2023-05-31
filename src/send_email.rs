@@ -2,30 +2,29 @@ use lettre::{
     message::header::ContentType, transport::smtp::authentication::Credentials, Message,
     SmtpTransport, Transport,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-pub fn send_email(data: SendEmailData) -> SendEmailResponse {
+use crate::{error::Error, response::Response};
+
+pub fn send_email(data: SendEmailData) -> Response<()> {
     match send_email_impl(data) {
-        Ok(_) => Default::default(),
-        Err(error) => SendEmailResponse {
-            status: Status::KO,
-            message: Some(error),
-        },
+        Ok(_) => Response::ok(()),
+        Err(error) => Response::err(error),
     }
 }
 
-fn send_email_impl(data: SendEmailData) -> Result<(), String> {
+fn send_email_impl(data: SendEmailData) -> Result<(), Error> {
     let credentials = get_credentials()?;
     let message = create_message(data)?;
     let mailer = create_mailer(credentials)?;
 
-    mailer.send(&message).map_err(to_string)?;
+    mailer.send(&message)?;
     Ok(())
 }
 
-fn get_credentials() -> Result<Credentials, String> {
-    let username = std::env::var("SENDER_EMAIL").map_err(to_string)?;
-    let password = std::env::var("SENDER_PASSWORD").map_err(to_string)?;
+fn get_credentials() -> Result<Credentials, Error> {
+    let username = std::env::var("SENDER_EMAIL")?;
+    let password = std::env::var("SENDER_PASSWORD")?;
     Ok(Credentials::new(username, password))
 }
 
@@ -36,34 +35,26 @@ fn create_message(
         email,
         body,
     }: SendEmailData,
-) -> Result<Message, String> {
-    let sender_email = std::env::var("SENDER_EMAIL").map_err(to_string)?;
-    let receiver_email = std::env::var("RECEIVER_EMAIL").map_err(to_string)?;
-    let email_subject = std::env::var("RECEIVER_EMAIL_SUBJECT").map_err(to_string)?;
+) -> Result<Message, Error> {
+    let sender_email = std::env::var("SENDER_EMAIL")?;
+    let receiver_email = std::env::var("RECEIVER_EMAIL")?;
+    let email_subject = std::env::var("RECEIVER_EMAIL_SUBJECT")?;
     Message::builder()
-        .from(sender_email.parse().map_err(to_string)?)
-        .to(receiver_email.parse().map_err(to_string)?)
+        .from(sender_email.parse()?)
+        .to(receiver_email.parse()?)
         .subject(email_subject)
         .header(ContentType::TEXT_PLAIN)
         .body(format!(
             "From: {first_name} {last_name} <{email}>\n\n\n{body}"
         ))
-        .map_err(to_string)
+        .map_err(|err| err.into())
 }
 
-fn create_mailer(credentials: Credentials) -> Result<SmtpTransport, String> {
-    let smtp_server = std::env::var("SENDER_SMTP_SERVER").map_err(to_string)?;
-    Ok(SmtpTransport::relay(&smtp_server)
-        .map_err(to_string)?
+fn create_mailer(credentials: Credentials) -> Result<SmtpTransport, Error> {
+    let smtp_server = std::env::var("SENDER_SMTP_SERVER")?;
+    Ok(SmtpTransport::relay(&smtp_server)?
         .credentials(credentials)
         .build())
-}
-
-fn to_string<T>(val: T) -> String
-where
-    T: ToString,
-{
-    val.to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,29 +65,4 @@ pub struct SendEmailData {
     last_name: String,
     email: String,
     body: String,
-}
-
-#[derive(Debug, Default, Serialize)]
-pub struct SendEmailResponse {
-    status: Status,
-    message: Option<String>,
-}
-
-#[derive(Debug, Default)]
-enum Status {
-    #[default]
-    OK,
-    KO,
-}
-
-impl Serialize for Status {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Status::OK => serializer.serialize_str("ok"),
-            Status::KO => serializer.serialize_str("ko"),
-        }
-    }
 }

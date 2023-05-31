@@ -4,10 +4,7 @@ use std::{
     time::Duration,
 };
 
-use axum::{extract::Path, Json};
-use serde::Serialize;
-
-use crate::error::Error;
+use crate::{error::Error, response::Response};
 
 use self::packet::{
     handshake::Handshake,
@@ -17,7 +14,7 @@ use self::packet::{
 };
 
 mod bytes;
-mod packet;
+pub mod packet;
 
 type Result<T> = result::Result<T, Error>;
 
@@ -54,32 +51,20 @@ fn create_tcp_stream() -> Result<TcpStream> {
 
     Ok(stream)
 }
-
-#[derive(Serialize)]
-pub struct Response<T> {
-    status: String,
-    response: Option<T>,
-}
-
-fn handle_route<F, T>(route_func: F) -> Json<Response<T>>
+fn handle_route<F, T>(route_func: F) -> Response<T>
 where
     F: FnOnce() -> Result<T>,
 {
-    let (status, response) = match route_func() {
-        Ok(status_response) => ("ok".to_string(), Some(status_response)),
-        Err(err) => {
-            let error = err;
-            (format!("{error:?}"), None)
-        }
-    };
-
-    Json(Response { status, response })
+    match route_func() {
+        Ok(val) => Response::ok(val),
+        Err(err) => Response::err(err),
+    }
 }
 
-pub async fn ping_route(Path(payload): Path<i64>) -> Json<Response<PingResponse>> {
+pub fn ping_route(payload: i64) -> Response<PingResponse> {
     handle_route(|| ping(payload))
 }
 
-pub async fn status_route() -> Json<Response<StatusResponse>> {
+pub fn status_route() -> Response<StatusResponse> {
     handle_route(status)
 }
