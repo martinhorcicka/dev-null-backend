@@ -18,8 +18,12 @@ pub struct Packet {
 fn leb128_err_to_ioerr(err: leb128::read::Error) -> std::io::Error {
     match err {
         leb128::read::Error::IoError(err) => err,
-        leb128::read::Error::Overflow => std::io::Error::new(std::io::ErrorKind::Other, "Overflow"),
+        leb128::read::Error::Overflow => std::io::Error::new(std::io::ErrorKind::Other, "overflow"),
     }
+}
+
+fn try_from_int_to_ioerr(err: std::num::TryFromIntError) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, "overflow")
 }
 
 pub trait SendPacket {
@@ -39,7 +43,7 @@ impl Packet {
 
     pub fn recv(stream: &mut TcpStream) -> io::Result<Packet> {
         let length = leb128::read::signed(stream).map_err(leb128_err_to_ioerr)?;
-        let mut buffer = vec![0u8; length as usize];
+        let mut buffer = vec![0u8; length.try_into().map_err(try_from_int_to_ioerr)?];
         stream.read_exact(&mut buffer)?;
         let mut data: Bytes = buffer.into();
 
