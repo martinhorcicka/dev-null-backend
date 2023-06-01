@@ -22,7 +22,7 @@ fn leb128_err_to_ioerr(err: leb128::read::Error) -> std::io::Error {
     }
 }
 
-fn try_from_int_to_ioerr(err: std::num::TryFromIntError) -> std::io::Error {
+fn try_from_int_to_ioerr(_err: std::num::TryFromIntError) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, "overflow")
 }
 
