@@ -1,8 +1,8 @@
-use std::{borrow::Cow, net::SocketAddr, ops::ControlFlow, time::Duration};
+use std::{net::SocketAddr, ops::ControlFlow, time::Duration};
 
 use axum::{
     extract::{
-        ws::{CloseFrame, Message, WebSocket},
+        ws::{Message, WebSocket},
         ConnectInfo, WebSocketUpgrade,
     },
     headers,
@@ -10,8 +10,6 @@ use axum::{
     TypedHeader,
 };
 use futures_util::{SinkExt, StreamExt};
-
-use crate::report::mc::packet::ping::PingResponse;
 
 /// The handler for the HTTP request (this gets called when the HTTP GET lands at the start
 /// of websocket negotiation). After this completes, the actual switching from HTTP to

@@ -2,6 +2,9 @@ mod error;
 mod report;
 mod response;
 mod send_email;
+mod ws;
+
+use std::net::SocketAddr;
 
 use axum::{
     extract::Path,
@@ -27,6 +30,7 @@ async fn main() {
     dotenv::dotenv().ok();
 
     let app = Router::new()
+        .route("/ws", get(ws::ws_handler))
         .route("/send_email", post(send_email))
         .route("/report/mc/ping/:payload", get(mc_server_ping))
         .route("/report/mc/status", get(mc_server_status))
@@ -39,7 +43,7 @@ async fn main() {
         .expect("invalid format for ip and/or port");
     tracing::debug!("listening on {addr}");
     axum_server::bind(addr)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .unwrap();
 }
