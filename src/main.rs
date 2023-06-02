@@ -4,16 +4,21 @@ mod response;
 mod send_email;
 mod ws;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     extract::Path,
     routing::{get, post},
     Json, Router,
 };
+use error::Error;
 use report::mc::packet::{ping::PingResponse, status::StatusResponse};
 use response::Response;
 use send_email::SendEmailData;
+use tokio::sync::{
+    mpsc::{channel, Sender},
+    Mutex,
+};
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
@@ -34,6 +39,7 @@ async fn main() {
         .route("/send_email", post(send_email))
         .route("/report/mc/ping/:payload", get(mc_server_ping))
         .route("/report/mc/status", get(mc_server_status))
+        .with_state(watch_mc_server())
         .layer(CorsLayer::permissive());
 
     let ip = std::env::var("BACKEND_ADDR").expect("cannot run without specified address");
@@ -46,6 +52,46 @@ async fn main() {
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .unwrap();
+}
+
+#[derive(Debug)]
+pub struct ServerInfoUpdate {
+    pub minecraft_status: MinecraftStatus,
+}
+
+#[derive(Debug)]
+pub enum MinecraftStatus {
+    Online,
+    Offline(Error),
+}
+
+fn watch_mc_server() -> Sender<Sender<ServerInfoUpdate>> {
+    let (tx, mut rx) = channel(10);
+
+    tokio::spawn(async move {
+        let mut senders: Vec<Sender<ServerInfoUpdate>> = vec![];
+        loop {
+            let task = tokio::time::sleep(Duration::from_secs(10));
+            let receive_sender_task = rx.recv();
+
+            tokio::select! {
+                _ = task => {
+                    println!("task done");
+                    for s in &senders {
+                        s.send(ServerInfoUpdate{minecraft_status: MinecraftStatus::Online}).await.unwrap();
+                    }
+                }
+                recv = receive_sender_task => {
+                    println!("received websocket connection");
+                    if let Some(s) = recv {
+                        senders.push(s);
+                    }
+                }
+            }
+        }
+    });
+
+    tx
 }
 
 async fn send_email(Json(send_email_data): Json<SendEmailData>) -> Json<Response<()>> {
