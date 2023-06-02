@@ -36,7 +36,7 @@ async fn main() {
         .route("/send_email", post(send_email))
         .route("/report/mc/ping/:payload", get(mc_server_ping))
         .route("/report/mc/status", get(mc_server_status))
-        .with_state(watch_mc_server())
+        .with_state(ws_informant())
         .layer(CorsLayer::permissive());
 
     let ip = std::env::var("BACKEND_ADDR").expect("cannot run without specified address");
@@ -63,7 +63,7 @@ pub enum MinecraftStatus {
 }
 
 #[derive(Debug, Eq, Hash, PartialEq, Clone, Copy)]
-pub struct UniqueId(u64);
+pub struct UniqueId(u128);
 pub struct ServiceListener {
     sender: Sender<ServerInfoUpdate>,
 }
@@ -74,7 +74,7 @@ impl ServiceListener {
     }
 }
 
-fn watch_mc_server() -> Sender<ServiceListener> {
+fn ws_informant() -> Sender<ServiceListener> {
     let (tx, mut rx) = channel(10);
 
     tokio::spawn(async move {
