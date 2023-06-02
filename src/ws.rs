@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, ops::ControlFlow, time::Duration};
+use std::{net::SocketAddr, ops::ControlFlow};
 
 use axum::{
     extract::{
@@ -13,7 +13,7 @@ use futures_util::{stream::SplitSink, SinkExt, StreamExt};
 use serde::Serialize;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use crate::ServerInfoUpdate;
+use crate::{ServerInfoUpdate, ServiceListener};
 
 /// The handler for the HTTP request (this gets called when the HTTP GET lands at the start
 /// of websocket negotiation). After this completes, the actual switching from HTTP to
@@ -22,7 +22,7 @@ use crate::ServerInfoUpdate;
 /// as well as things from HTTP headers such as user-agent of the browser etc.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(sender): State<Sender<Sender<ServerInfoUpdate>>>,
+    State(sender): State<Sender<ServiceListener>>,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
@@ -71,37 +71,9 @@ async fn server_communication(
             }
         }
     }
-    // let mut previous_status = true;
-    // loop {
-    //     let server_status = match crate::report::mc::ping(1) {
-    //         Ok(_) => McServerStatus {
-    //             online: true,
-    //             reason: None,
-    //         },
-    //         Err(err) => McServerStatus {
-    //             online: false,
-    //             reason: Some(err),
-    //         },
-    //     };
-    //
-    //     if previous_status != server_status.online {
-    //         previous_status = server_status.online;
-    //         let response =
-    //             serde_json::to_string(&server_status).expect("this parse should always succeed");
-    //
-    //         if sender.send(Message::Text(response)).await.is_err() {
-    //             println!("client {who} abruptly disconnected");
-    //         }
-    //     }
-    //     tokio::time::sleep(Duration::from_secs(5)).await;
-    // }
 }
 
-async fn handle_socket(
-    mut socket: WebSocket,
-    who: SocketAddr,
-    sender: Sender<Sender<ServerInfoUpdate>>,
-) {
+async fn handle_socket(mut socket: WebSocket, who: SocketAddr, sender: Sender<ServiceListener>) {
     if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
         println!("Pinged {}...", who);
     } else {
@@ -122,7 +94,7 @@ async fn handle_socket(
 
     let (tx, rx) = channel(10);
     println!("notifying server about new websocket connection..");
-    if let Err(_) = sender.send(tx).await {
+    if sender.send(ServiceListener::new(tx)).await.is_err() {
         println!("couldn't reach the server, closing connection..");
         return;
     }
@@ -162,7 +134,7 @@ fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
             } else {
                 println!("{} somehow sent close message without CloseFrame", who);
             }
-            return ControlFlow::Break(());
+            ControlFlow::Break(())
         }
         _ => ControlFlow::Continue(()),
     }
