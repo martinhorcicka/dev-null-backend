@@ -3,19 +3,18 @@ mod report;
 mod response;
 mod send_email;
 mod ws;
+mod ws_informant;
 
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
 use axum::{
     extract::Path,
     routing::{get, post},
     Json, Router,
 };
-use error::Error;
 use report::mc::packet::{ping::PingResponse, status::StatusResponse};
 use response::Response;
 use send_email::SendEmailData;
-use tokio::sync::mpsc::{channel, Sender};
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
@@ -36,7 +35,7 @@ async fn main() {
         .route("/send_email", post(send_email))
         .route("/report/mc/ping/:payload", get(mc_server_ping))
         .route("/report/mc/status", get(mc_server_status))
-        .with_state(ws_informant())
+        .with_state(ws_informant::service_provider())
         .layer(CorsLayer::permissive());
 
     let ip = std::env::var("BACKEND_ADDR").expect("cannot run without specified address");
@@ -49,69 +48,6 @@ async fn main() {
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .unwrap();
-}
-
-#[derive(Debug)]
-pub struct ServerInfoUpdate {
-    pub minecraft_status: MinecraftStatus,
-}
-
-#[derive(Debug)]
-pub enum MinecraftStatus {
-    Online,
-    Offline(Error),
-}
-
-#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy)]
-pub struct UniqueId(u128);
-pub struct ServiceListener {
-    sender: Sender<ServerInfoUpdate>,
-}
-
-impl ServiceListener {
-    fn new(sender: Sender<ServerInfoUpdate>) -> Self {
-        Self { sender }
-    }
-}
-
-fn ws_informant() -> Sender<ServiceListener> {
-    let (tx, mut rx) = channel(10);
-
-    tokio::spawn(async move {
-        let mut listeners: HashMap<UniqueId, ServiceListener> = HashMap::new();
-        let mut counter = 0;
-        let mut disconnected_sockets: Vec<UniqueId> = vec![];
-        loop {
-            for ds in &disconnected_sockets {
-                listeners.remove(ds);
-            }
-            disconnected_sockets.clear();
-            let task = tokio::time::sleep(Duration::from_secs(10));
-            let receive_sender_task = rx.recv();
-
-            tokio::select! {
-                _ = task => {
-                    println!("task done");
-                    for l in &listeners {
-                        let s = &l.1.sender;
-                        if s.send(ServerInfoUpdate{minecraft_status: MinecraftStatus::Online}).await.is_err() {
-                            println!("websocket disconnected");
-                            disconnected_sockets.push(*l.0);
-                        }
-                    }
-                }
-                recv = receive_sender_task => {
-                    println!("received websocket connection");
-                    if let Some(s) = recv {
-                        listeners.insert(UniqueId(counter), s);
-                        counter += 1;
-                    }
-                }
-            }
-        }
-    });
-
-    tx
 }
 
 async fn send_email(Json(send_email_data): Json<SendEmailData>) -> Json<Response<()>> {

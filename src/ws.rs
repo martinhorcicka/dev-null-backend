@@ -13,7 +13,7 @@ use futures_util::{stream::SplitSink, SinkExt, StreamExt};
 use serde::Serialize;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use crate::{ServerInfoUpdate, ServiceListener};
+use crate::ws_informant::{MinecraftStatus, ServerInfoUpdate, ServiceListener};
 
 /// The handler for the HTTP request (this gets called when the HTTP GET lands at the start
 /// of websocket negotiation). After this completes, the actual switching from HTTP to
@@ -40,7 +40,17 @@ pub async fn ws_handler(
 #[derive(Debug, Serialize)]
 struct McServerStatus {
     online: bool,
-    reason: Option<crate::error::Error>,
+    reason: Option<String>,
+}
+
+impl From<MinecraftStatus> for McServerStatus {
+    fn from(value: MinecraftStatus) -> Self {
+        let (online, reason) = match value {
+            MinecraftStatus::Online => (true, None),
+            MinecraftStatus::Offline(err) => (false, Some(err)),
+        };
+        Self { online, reason }
+    }
 }
 
 async fn server_communication(
@@ -50,24 +60,19 @@ async fn server_communication(
 ) {
     let mut previous_status = false;
     while let Some(info) = receiver.recv().await {
-        println!("received {info:?}");
-        let server_status = match info.minecraft_status {
-            crate::MinecraftStatus::Online => McServerStatus {
-                online: true,
-                reason: None,
-            },
-            crate::MinecraftStatus::Offline(reason) => McServerStatus {
-                online: false,
-                reason: Some(reason),
-            },
-        };
-        if previous_status != server_status.online {
-            previous_status = server_status.online;
-            let response =
-                serde_json::to_string(&server_status).expect("this parse should always succeed");
+        match info {
+            ServerInfoUpdate::MinecraftStatus(mc_status) => {
+                let server_status: McServerStatus = mc_status.into();
 
-            if sender.send(Message::Text(response)).await.is_err() {
-                println!("client {who} abruptly disconnected");
+                if previous_status != server_status.online {
+                    previous_status = server_status.online;
+                    let response = serde_json::to_string(&server_status)
+                        .expect("this parse should always succeed");
+
+                    if sender.send(Message::Text(response)).await.is_err() {
+                        println!("client {who} abruptly disconnected");
+                    }
+                }
             }
         }
     }
