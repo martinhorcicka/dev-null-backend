@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 
-use tokio::sync::mpsc;
+use serde::Serialize;
+use tokio::sync::{broadcast, mpsc};
 
 #[derive(Debug)]
 pub enum Command {
+    None,
     Register,
     Subscribe(UniqueId, Channel),
     Unsubscribe(UniqueId, Channel),
@@ -12,8 +14,9 @@ pub enum Command {
 
 #[derive(Debug)]
 pub enum CommandResponse {
+    None,
     Registered(UniqueId),
-    Subscribed,
+    Subscribed(broadcast::Receiver<SubscriptionResponse>),
     Unsubscribed,
     Unregistered,
 }
@@ -22,15 +25,22 @@ pub enum CommandResponse {
 pub struct UniqueId(u128);
 impl UniqueId {
     fn next(&mut self) -> UniqueId {
-        let old = self.clone();
+        let old = *self;
         self.0 += 1;
         old
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Channel {
     Minecraft,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubscriptionResponse {
+    pub channel: Channel,
+    pub message: String,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +70,7 @@ async fn manager_service(
 ) {
     let mut current_unique_id = UniqueId(0);
     let mut registered_sockets = HashSet::<UniqueId>::new();
+    let (sub_tx, _sub_rx) = broadcast::channel(128);
     loop {
         if let Some((command, tx)) = command_receiver.recv().await {
             println!("received command {command:?}");
@@ -75,7 +86,15 @@ async fn manager_service(
                     registered_sockets.remove(&id);
                     tx.send(CommandResponse::Unregistered)
                 }
-                _ => todo!(),
+                Command::Subscribe(id, channel) => {
+                    println!("subscribing {id:?} to {channel:?}");
+                    tx.send(CommandResponse::Subscribed(sub_tx.subscribe()))
+                }
+                Command::Unsubscribe(id, channel) => {
+                    println!("unsubscribing {id:?} from {channel:?}");
+                    tx.send(CommandResponse::Unsubscribed)
+                }
+                Command::None => tx.send(CommandResponse::None),
             }
             .await
             {

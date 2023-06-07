@@ -1,5 +1,8 @@
-use std::{net::SocketAddr, ops::ControlFlow};
+use std::{collections::HashMap, net::SocketAddr, ops::ControlFlow};
 
+use crate::ws::management::CommandResponse;
+
+use super::management::{Manager, SubscriptionResponse, UniqueId};
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -9,9 +12,9 @@ use axum::{
     response::IntoResponse,
     TypedHeader,
 };
-use futures_util::StreamExt;
-
-use super::management::Manager;
+use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
+use tokio::sync::broadcast;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -31,7 +34,9 @@ pub async fn ws_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, who: SocketAddr, manager: Manager) {
-    ping_websocket(&mut socket, &who).await;
+    if ping_websocket(&mut socket, &who).await.is_break() {
+        return;
+    }
 
     if let Some(response) = manager
         .send_command(super::management::Command::Register)
@@ -42,7 +47,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, manager: Manager)
             _ => return,
         };
 
-        handle_communication_with_manager(socket, &manager).await;
+        handle_communication_with_manager(socket, id, &manager).await;
 
         manager
             .send_command(super::management::Command::Unregister(id))
@@ -52,19 +57,103 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, manager: Manager)
     println!("websocket context {who} destroyed");
 }
 
-async fn handle_communication_with_manager(socket: WebSocket, manager: &Manager) {
-    let (tx, mut rx) = socket.split();
+async fn handle_communication_with_manager(socket: WebSocket, id: UniqueId, manager: &Manager) {
+    let (mut tx, mut rx) = socket.split();
+    let mut listening_channels =
+        HashMap::<Channel, broadcast::Receiver<SubscriptionResponse>>::new();
 
-    let recv_task = tokio::spawn(async move {
+    let mut send_task = tokio::spawn(async move {
+        loop {
+            for (_ch, recv) in listening_channels.iter_mut() {
+                if let Ok(response) = recv.recv().await {
+                    if let Err(error) = tx
+                        .send(Message::Text(
+                            serde_json::to_string(&response)
+                                .expect("should always parse successfully"),
+                        ))
+                        .await
+                    {
+                        println!("failed sending info to websocket: {error}");
+                    }
+                }
+            }
+        }
+    });
+
+    let mgr = manager.clone();
+    let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = rx.next().await {
-            if process_message(msg).is_break() {
+            if let ControlFlow::Continue(command) = process_message(msg) {
+                if let Some(CommandResponse::Subscribed(_recv)) =
+                    mgr.send_command(command.with_unique_id(id)).await
+                {
+                    match command {
+                        WebsocketCommand::Known {
+                            command: _,
+                            channel,
+                        } => {
+                            println!("trying to assign a receiver to {channel:?} channel");
+                        }
+                        WebsocketCommand::Unknown => {}
+                    }
+                }
+            } else {
                 break;
             }
         }
     });
+
+    tokio::select! {
+        _ = (&mut send_task) => {
+            recv_task.abort();
+        },
+        _ = (&mut recv_task) => {
+            send_task.abort();
+        }
+    }
 }
 
-fn process_message(msg: Message) -> ControlFlow<(), ()> {
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(untagged)]
+enum WebsocketCommand {
+    Known { command: Command, channel: Channel },
+    Unknown,
+}
+
+impl WebsocketCommand {
+    fn with_unique_id(&self, id: UniqueId) -> super::management::Command {
+        match *self {
+            WebsocketCommand::Known { command, channel } => match command {
+                Command::Subscribe => super::management::Command::Subscribe(id, channel.into()),
+                Command::Unsubscribe => super::management::Command::Unsubscribe(id, channel.into()),
+            },
+            WebsocketCommand::Unknown => super::management::Command::None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum Command {
+    Subscribe,
+    Unsubscribe,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum Channel {
+    Minecraft,
+}
+
+impl From<Channel> for super::management::Channel {
+    fn from(value: Channel) -> Self {
+        match value {
+            Channel::Minecraft => Self::Minecraft,
+        }
+    }
+}
+
+fn process_message(msg: Message) -> ControlFlow<(), WebsocketCommand> {
     match msg {
         Message::Close(c) => {
             if let Some(cf) = c {
@@ -77,26 +166,32 @@ fn process_message(msg: Message) -> ControlFlow<(), ()> {
             }
             ControlFlow::Break(())
         }
-        _ => ControlFlow::Continue(()),
+        Message::Text(text) => {
+            let command = match serde_json::from_str::<WebsocketCommand>(&text) {
+                Ok(cmd) => cmd,
+                Err(_) => WebsocketCommand::Unknown,
+            };
+            ControlFlow::Continue(command)
+        }
+        _ => ControlFlow::Continue(WebsocketCommand::Unknown),
     }
 }
 
-async fn ping_websocket(socket: &mut WebSocket, who: &SocketAddr) {
+async fn ping_websocket(
+    socket: &mut WebSocket,
+    who: &SocketAddr,
+) -> ControlFlow<(), WebsocketCommand> {
     if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
         println!("Pinged {}...", who);
     } else {
         println!("Could not send ping {}!", who);
-        return;
+        return ControlFlow::Break(());
     }
 
-    if let Some(msg) = socket.recv().await {
-        if let Ok(msg) = msg {
-            if process_message(msg).is_break() {
-                return;
-            }
-        } else {
-            println!("client {who} abruptly disconnected");
-            return;
-        }
+    if let Some(Ok(msg)) = socket.recv().await {
+        process_message(msg)
+    } else {
+        println!("client {who} abruptly disconnected");
+        ControlFlow::Break(())
     }
 }
