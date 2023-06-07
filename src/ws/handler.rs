@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, ops::ControlFlow};
+use std::{net::SocketAddr, ops::ControlFlow};
 
 use crate::ws::management::CommandResponse;
 
@@ -14,7 +14,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
-use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -38,8 +38,9 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, manager: Manager)
         return;
     }
 
+    let (sub_tx, sub_rx) = mpsc::channel(16);
     if let Some(response) = manager
-        .send_command(super::management::Command::Register)
+        .send_command(super::management::Command::Register(sub_tx))
         .await
     {
         let id = match response {
@@ -47,7 +48,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, manager: Manager)
             _ => return,
         };
 
-        handle_communication_with_manager(socket, id, &manager).await;
+        handle_communication_with_manager(socket, id, sub_rx, &manager).await;
 
         manager
             .send_command(super::management::Command::Unregister(id))
@@ -57,24 +58,24 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, manager: Manager)
     println!("websocket context {who} destroyed");
 }
 
-async fn handle_communication_with_manager(socket: WebSocket, id: UniqueId, manager: &Manager) {
+async fn handle_communication_with_manager(
+    socket: WebSocket,
+    id: UniqueId,
+    mut sub_rx: mpsc::Receiver<SubscriptionResponse>,
+    manager: &Manager,
+) {
     let (mut tx, mut rx) = socket.split();
-    let mut listening_channels =
-        HashMap::<Channel, broadcast::Receiver<SubscriptionResponse>>::new();
 
     let mut send_task = tokio::spawn(async move {
         loop {
-            for (_ch, recv) in listening_channels.iter_mut() {
-                if let Ok(response) = recv.recv().await {
-                    if let Err(error) = tx
-                        .send(Message::Text(
-                            serde_json::to_string(&response)
-                                .expect("should always parse successfully"),
-                        ))
-                        .await
-                    {
-                        println!("failed sending info to websocket: {error}");
-                    }
+            if let Some(response) = sub_rx.recv().await {
+                if let Err(error) = tx
+                    .send(Message::Text(
+                        serde_json::to_string(&response).expect("should always parse successfully"),
+                    ))
+                    .await
+                {
+                    println!("failed sending info to websocket: {error}");
                 }
             }
         }
@@ -84,7 +85,7 @@ async fn handle_communication_with_manager(socket: WebSocket, id: UniqueId, mana
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = rx.next().await {
             if let ControlFlow::Continue(command) = process_message(msg) {
-                if let Some(CommandResponse::Subscribed(_recv)) =
+                if let Some(CommandResponse::Subscribed) =
                     mgr.send_command(command.with_unique_id(id)).await
                 {
                     match command {

@@ -1,12 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub enum Command {
     None,
-    Register,
+    Register(mpsc::Sender<SubscriptionResponse>),
     Subscribe(UniqueId, Channel),
     Unsubscribe(UniqueId, Channel),
     Unregister(UniqueId),
@@ -16,7 +16,7 @@ pub enum Command {
 pub enum CommandResponse {
     None,
     Registered(UniqueId),
-    Subscribed(broadcast::Receiver<SubscriptionResponse>),
+    Subscribed,
     Unsubscribed,
     Unregistered,
 }
@@ -70,25 +70,27 @@ async fn manager_service(
 ) {
     let mut current_unique_id = UniqueId(0);
     let mut registered_sockets = HashSet::<UniqueId>::new();
-    let (sub_tx, _sub_rx) = broadcast::channel(128);
+    let mut registered_senders = HashMap::<UniqueId, mpsc::Sender<SubscriptionResponse>>::new();
     loop {
         if let Some((command, tx)) = command_receiver.recv().await {
             println!("received command {command:?}");
             if let Err(send_error) = match command {
-                Command::Register => {
+                Command::Register(sender) => {
                     let id = current_unique_id.next();
                     println!("registering websocket id {id:?}");
                     registered_sockets.insert(id);
+                    registered_senders.insert(id, sender);
                     tx.send(CommandResponse::Registered(id))
                 }
                 Command::Unregister(id) => {
                     println!("unregistering websocket with id {id:?}");
                     registered_sockets.remove(&id);
+                    registered_senders.remove(&id);
                     tx.send(CommandResponse::Unregistered)
                 }
                 Command::Subscribe(id, channel) => {
                     println!("subscribing {id:?} to {channel:?}");
-                    tx.send(CommandResponse::Subscribed(sub_tx.subscribe()))
+                    tx.send(CommandResponse::Subscribed)
                 }
                 Command::Unsubscribe(id, channel) => {
                     println!("unsubscribing {id:?} from {channel:?}");
