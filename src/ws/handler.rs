@@ -83,23 +83,28 @@ async fn handle_communication_with_manager(
 
     let mgr = manager.clone();
     let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = rx.next().await {
-            if let ControlFlow::Continue(command) = process_message(msg) {
-                if let Some(CommandResponse::Subscribed) =
-                    mgr.send_command(command.with_unique_id(id)).await
-                {
-                    match command {
-                        WebsocketCommand::Known {
-                            command: _,
-                            channel,
-                        } => {
-                            println!("trying to assign a receiver to {channel:?} channel");
+        while let Some(msg_res) = rx.next().await {
+            match msg_res {
+                Ok(msg) => {
+                    if let ControlFlow::Continue(command) = process_message(msg) {
+                        if let Some(CommandResponse::Subscribed) =
+                            mgr.send_command(command.with_unique_id(id)).await
+                        {
+                            match command {
+                                WebsocketCommand::Known {
+                                    command: _,
+                                    channel,
+                                } => {
+                                    println!("trying to assign a receiver to {channel:?} channel");
+                                }
+                                WebsocketCommand::Unknown => {}
+                            }
                         }
-                        WebsocketCommand::Unknown => {}
+                    } else {
+                        break;
                     }
                 }
-            } else {
-                break;
+                Err(error) => println!("websocket receive error: {error}"),
             }
         }
     });
@@ -155,6 +160,7 @@ impl From<Channel> for super::management::Channel {
 }
 
 fn process_message(msg: Message) -> ControlFlow<(), WebsocketCommand> {
+    println!("processing message: {msg:?}");
     match msg {
         Message::Close(c) => {
             if let Some(cf) = c {
