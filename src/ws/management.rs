@@ -1,115 +1,90 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc;
 
-use super::minecraft::{self, MinecraftReport};
-
-#[derive(Debug, Clone)]
-pub struct WsManager {
-    sender: Sender<SubscriptionInfo>,
+#[derive(Debug)]
+pub enum Command {
+    Register,
+    Subscribe(UniqueId, Channel),
+    Unsubscribe(UniqueId, Channel),
+    Unregister(UniqueId),
 }
 
-impl WsManager {
-    pub fn new() -> Self {
-        let (sender, receiver) = channel(10);
-        tokio::spawn(ws_manager_service(receiver));
-        WsManager { sender }
-    }
+#[derive(Debug)]
+pub enum CommandResponse {
+    Registered(UniqueId),
+    Subscribed,
+    Unsubscribed,
+    Unregistered,
+}
 
-    pub async fn subscribe(&self, info: SubscriptionInfo) {
-        if self.sender.send(info).await.is_err() {
-            println!("failed to subscribe a websocket");
-        }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct UniqueId(u128);
+impl UniqueId {
+    fn next(&mut self) -> UniqueId {
+        let old = self.clone();
+        self.0 += 1;
+        old
     }
 }
 
 #[derive(Debug)]
-pub struct SubscriptionInfo {
-    channel: SubscriptionChannel,
-    sender: Sender<Notification>,
-}
-
-impl SubscriptionInfo {
-    pub fn new(channel: SubscriptionChannel, sender: Sender<Notification>) -> Self {
-        Self { channel, sender }
-    }
-}
-
-#[derive(Clone)]
-pub enum Notification {
-    Minecraft(MinecraftReport),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum SubscriptionChannel {
+pub enum Channel {
     Minecraft,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct UniqueId(u128);
-impl UniqueId {
-    fn inc(&mut self) {
-        self.0 += 1;
+#[derive(Debug, Clone)]
+pub struct Manager {
+    command_sender: mpsc::Sender<(Command, mpsc::Sender<CommandResponse>)>,
+}
+
+impl Manager {
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel(16);
+        tokio::spawn(manager_service(rx));
+        Self { command_sender: tx }
+    }
+
+    pub async fn send_command(&self, command: Command) -> Option<CommandResponse> {
+        let (tx, mut rx) = mpsc::channel(1);
+        if let Err(error) = self.command_sender.send((command, tx)).await {
+            println!("Error sending command to manager service: {error}");
+        }
+
+        rx.recv().await
     }
 }
 
-async fn ws_manager_service(mut sub_receiver: Receiver<SubscriptionInfo>) {
-    let mut counter = UniqueId(0);
-    let mut websockets = HashMap::<UniqueId, Sender<Notification>>::new();
-    let mut subscribed_channels = HashMap::<UniqueId, SubscriptionChannel>::new();
-    let mut ids_marked_for_deletion = vec![];
-
-    let mut mc_recv = minecraft::minecraft_job();
-
-    loop {
-        for id in ids_marked_for_deletion.iter() {
-            websockets.remove(id);
-            subscribed_channels.remove(id);
-        }
-        ids_marked_for_deletion.clear();
-
-        let mc_recv_job = mc_recv.recv();
-        let sub_recv_job = sub_receiver.recv();
-
-        tokio::select! {
-            mc_report = mc_recv_job => {
-                if let Some(report) = mc_report {
-                    report_to_subscribers(report.into(), &mut websockets, &subscribed_channels, &mut ids_marked_for_deletion).await;
-                }
-            },
-            sub_info = sub_recv_job => {
-                println!("sub_info: {sub_info:?}");
-                if let Some(info) = sub_info {
-                    subscribed_channels.insert(counter, info.channel);
-                    websockets.insert(counter, info.sender);
-                    counter.inc();
-                }
-            }
-        }
-    }
-}
-
-async fn report_to_subscribers(
-    report: Notification,
-    websockets: &mut HashMap<UniqueId, Sender<Notification>>,
-    subbed_channels: &HashMap<UniqueId, SubscriptionChannel>,
-    ids_marked_for_deletion: &mut Vec<UniqueId>,
+async fn manager_service(
+    mut command_receiver: mpsc::Receiver<(Command, mpsc::Sender<CommandResponse>)>,
 ) {
-    for id in subbed_channels.iter().filter_map(|(id, ch)| {
-        if *ch
-            == match &report {
-                Notification::Minecraft(_) => SubscriptionChannel::Minecraft,
+    let mut current_unique_id = UniqueId(0);
+    let mut registered_sockets = HashSet::<UniqueId>::new();
+    loop {
+        if let Some((command, tx)) = command_receiver.recv().await {
+            println!("received command {command:?}");
+            if let Err(send_error) = match command {
+                Command::Register => {
+                    let id = current_unique_id.next();
+                    println!("registering websocket id {id:?}");
+                    registered_sockets.insert(id);
+                    tx.send(CommandResponse::Registered(id))
+                }
+                Command::Unregister(id) => {
+                    println!("unregistering websocket with id {id:?}");
+                    registered_sockets.remove(&id);
+                    tx.send(CommandResponse::Unregistered)
+                }
+                _ => todo!(),
             }
-        {
-            Some(id)
+            .await
+            {
+                println!("error sending response back to websocket: {send_error}");
+            }
         } else {
-            None
-        }
-    }) {
-        if let Some(ws) = websockets.get(id) {
-            if ws.send(report.clone()).await.is_err() {
-                ids_marked_for_deletion.push(*id);
-            }
+            println!("channel has been closed, stopping the service..");
+            break;
         }
     }
+    println!("manager_service stopped");
 }

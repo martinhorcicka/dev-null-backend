@@ -17,7 +17,7 @@ use send_email::SendEmailData;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-use crate::ws::{handler::ws_handler, management::WsManager};
+// use crate::ws::{handler::ws_handler, management::WsManager};
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
@@ -32,11 +32,11 @@ async fn main() {
     dotenv::dotenv().ok();
 
     let app = Router::new()
-        .route("/ws", get(ws_handler))
+        .route("/ws", get(ws::handler::ws_handler))
         .route("/send_email", post(send_email))
         .route("/report/mc/ping/:payload", get(mc_server_ping))
         .route("/report/mc/status", get(mc_server_status))
-        .with_state(WsManager::new())
+        .with_state(ws::management::Manager::new())
         .layer(CorsLayer::permissive());
 
     let ip = std::env::var("BACKEND_ADDR").expect("cannot run without specified address");
