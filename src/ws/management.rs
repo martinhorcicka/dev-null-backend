@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 use tokio::sync::mpsc;
 
+use crate::ws::minecraft::MinecraftJob;
+
 #[derive(Debug)]
 pub enum Command {
     None,
@@ -68,12 +70,13 @@ impl Manager {
 async fn manager_service(
     mut command_receiver: mpsc::Receiver<(Command, mpsc::Sender<CommandResponse>)>,
 ) {
+    let mut mc_job = MinecraftJob::new();
+
     let mut current_unique_id = UniqueId(0);
     let mut registered_sockets = HashSet::<UniqueId>::new();
     let mut registered_senders = HashMap::<UniqueId, mpsc::Sender<SubscriptionResponse>>::new();
     loop {
         if let Some((command, tx)) = command_receiver.recv().await {
-            println!("received command {command:?}");
             if let Err(send_error) = match command {
                 Command::Register(sender) => {
                     let id = current_unique_id.next();
@@ -90,10 +93,18 @@ async fn manager_service(
                 }
                 Command::Subscribe(id, channel) => {
                     println!("subscribing {id:?} to {channel:?}");
+                    match channel {
+                        Channel::Minecraft => {
+                            mc_job.subscribe(id, registered_senders[&id].clone()).await
+                        }
+                    }
                     tx.send(CommandResponse::Subscribed)
                 }
                 Command::Unsubscribe(id, channel) => {
                     println!("unsubscribing {id:?} from {channel:?}");
+                    match channel {
+                        Channel::Minecraft => mc_job.unsubscribe(id).await,
+                    }
                     tx.send(CommandResponse::Unsubscribed)
                 }
                 Command::None => tx.send(CommandResponse::None),
