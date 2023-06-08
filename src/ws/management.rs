@@ -42,7 +42,22 @@ pub enum Channel {
 #[derive(Debug, Clone, Serialize)]
 pub struct SubscriptionResponse {
     pub channel: Channel,
-    pub message: String,
+    message: SubscriptionResponseMessage,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+enum SubscriptionResponseMessage {
+    Minecraft(super::minecraft::StatusMessage),
+}
+
+impl From<super::minecraft::StatusMessage> for SubscriptionResponse {
+    fn from(value: super::minecraft::StatusMessage) -> Self {
+        SubscriptionResponse {
+            channel: Channel::Minecraft,
+            message: SubscriptionResponseMessage::Minecraft(value),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

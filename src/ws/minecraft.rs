@@ -64,11 +64,7 @@ impl MinecraftJob {
                     if let Some((id, sender)) = new_sub {
                         println!("subbing {id:?} to minecraft");
                         if let Err(error) = sender
-                            .send(SubscriptionResponse {
-                                channel: crate::ws::management::Channel::Minecraft,
-                                message: serde_json::to_string(&current_server_status.to_status_message())
-                                    .expect("should always parse"),
-                            })
+                            .send(current_server_status.to_status_message().into())
                             .await
                         {
                             println!("failed to send mc message: {error}");
@@ -88,11 +84,7 @@ impl MinecraftJob {
                     if changed {
                         for (id, sender) in subscribers.iter_mut() {
                             if let Err(error) = sender
-                                .send(SubscriptionResponse {
-                                    channel: crate::ws::management::Channel::Minecraft,
-                                    message: serde_json::to_string(&current_server_status.to_status_message())
-                                        .expect("should always parse"),
-                                })
+                                .send(current_server_status.to_status_message().into())
                                 .await
                             {
                                 println!("failed to send mc message: {error}, unsubbing");
@@ -144,8 +136,8 @@ impl MinecraftServerStatus {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct StatusMessage {
+#[derive(Debug, Serialize, Clone)]
+pub struct StatusMessage {
     online: bool,
     reason: Option<String>,
 }

@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, ops::ControlFlow};
+use std::{net::SocketAddr, ops::ControlFlow, time::Duration};
 
 use crate::ws::management::CommandResponse;
 
@@ -66,18 +66,44 @@ async fn handle_communication_with_manager(
 ) {
     let (mut tx, mut rx) = socket.split();
 
+    let (send_to_sink, mut recv_to_sink) = mpsc::channel(16);
+
     let mut send_task = tokio::spawn(async move {
+        while let Some(msg) = recv_to_sink.recv().await {
+            if tx.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let manager_sender = send_to_sink.clone();
+    tokio::spawn(async move {
         loop {
             if let Some(response) = sub_rx.recv().await {
-                if let Err(error) = tx
+                if let Err(error) = manager_sender
                     .send(Message::Text(
                         serde_json::to_string(&response).expect("should always parse successfully"),
                     ))
                     .await
                 {
                     println!("failed sending info to websocket: {error}");
+                    break;
                 }
             }
+        }
+    });
+
+    let ping_sender = send_to_sink.clone();
+    tokio::spawn(async move {
+        loop {
+            if ping_sender
+                .send(Message::Ping(vec![1, 2, 3]))
+                .await
+                .is_err()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(30)).await;
         }
     });
 
@@ -110,12 +136,8 @@ async fn handle_communication_with_manager(
     });
 
     tokio::select! {
-        _ = (&mut send_task) => {
-            recv_task.abort();
-        },
-        _ = (&mut recv_task) => {
-            send_task.abort();
-        }
+        _ = (&mut send_task) => recv_task.abort(),
+        _ = (&mut recv_task) => send_task.abort(),
     }
 }
 
@@ -160,7 +182,6 @@ impl From<Channel> for super::management::Channel {
 }
 
 fn process_message(msg: Message) -> ControlFlow<(), WebsocketCommand> {
-    println!("processing message: {msg:?}");
     match msg {
         Message::Close(c) => {
             if let Some(cf) = c {
