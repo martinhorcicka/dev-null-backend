@@ -15,7 +15,10 @@ use report::mc::packet::{ping::PingResponse, status::StatusResponse};
 use response::Response;
 use send_email::SendEmailData;
 use tower_http::cors::CorsLayer;
-use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    fmt::writer::MakeWriterExt, prelude::__tracing_subscriber_SubscriberExt,
+    util::SubscriberInitExt,
+};
 
 // use crate::ws::{handler::ws_handler, management::WsManager};
 
@@ -23,10 +26,9 @@ use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::Subs
 async fn main() {
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "dev-null_backend=debug".into()),
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stdout.with_max_level(tracing::Level::DEBUG)),
         )
-        .with(tracing_subscriber::fmt::layer())
         .init();
 
     dotenv::dotenv().ok();

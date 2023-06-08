@@ -75,7 +75,7 @@ impl Manager {
     pub async fn send_command(&self, command: Command) -> Option<CommandResponse> {
         let (tx, mut rx) = mpsc::channel(1);
         if let Err(error) = self.command_sender.send((command, tx)).await {
-            println!("Error sending command to manager service: {error}");
+            tracing::warn!("Error sending command to manager service: {error}");
         }
 
         rx.recv().await
@@ -95,19 +95,19 @@ async fn manager_service(
             if let Err(send_error) = match command {
                 Command::Register(sender) => {
                     let id = current_unique_id.next();
-                    println!("registering websocket id {id:?}");
+                    tracing::debug!("registering websocket id {id:?}");
                     registered_sockets.insert(id);
                     registered_senders.insert(id, sender);
                     tx.send(CommandResponse::Registered(id))
                 }
                 Command::Unregister(id) => {
-                    println!("unregistering websocket with id {id:?}");
+                    tracing::debug!("unregistering websocket with id {id:?}");
                     registered_sockets.remove(&id);
                     registered_senders.remove(&id);
                     tx.send(CommandResponse::Unregistered)
                 }
                 Command::Subscribe(id, channel) => {
-                    println!("subscribing {id:?} to {channel:?}");
+                    tracing::debug!("subscribing {id:?} to {channel:?}");
                     match channel {
                         Channel::Minecraft => {
                             mc_job.subscribe(id, registered_senders[&id].clone()).await
@@ -116,7 +116,7 @@ async fn manager_service(
                     tx.send(CommandResponse::Subscribed)
                 }
                 Command::Unsubscribe(id, channel) => {
-                    println!("unsubscribing {id:?} from {channel:?}");
+                    tracing::debug!("unsubscribing {id:?} from {channel:?}");
                     match channel {
                         Channel::Minecraft => mc_job.unsubscribe(id).await,
                     }
@@ -126,12 +126,12 @@ async fn manager_service(
             }
             .await
             {
-                println!("error sending response back to websocket: {send_error}");
+                tracing::warn!("error sending response back to websocket: {send_error}");
             }
         } else {
-            println!("channel has been closed, stopping the service..");
+            tracing::error!("channel has been closed, stopping the service..");
             break;
         }
     }
-    println!("manager_service stopped");
+    tracing::debug!("manager_service stopped");
 }

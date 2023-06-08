@@ -27,13 +27,13 @@ impl MinecraftJob {
 
     pub async fn subscribe(&mut self, id: UniqueId, sender: mpsc::Sender<SubscriptionResponse>) {
         if let Err(err) = self.subscribe_sender.send((id, sender)).await {
-            println!("failed to subscribe ws to MC job: {err}");
+            tracing::warn!("failed to subscribe ws to MC job: {err}");
         }
     }
 
     pub async fn unsubscribe(&mut self, id: UniqueId) {
         if let Err(err) = self.unsubscribe_sender.send(id).await {
-            println!("failed to unsubscribe ws to MC job: {err}");
+            tracing::warn!("failed to unsubscribe ws to MC job: {err}");
         }
     }
 
@@ -62,12 +62,12 @@ impl MinecraftJob {
             tokio::select! {
                 new_sub = sub_task => {
                     if let Some((id, sender)) = new_sub {
-                        println!("subbing {id:?} to minecraft");
+                        tracing::debug!("subbing {id:?} to minecraft");
                         if let Err(error) = sender
                             .send(current_server_status.to_status_message().into())
                             .await
                         {
-                            println!("failed to send mc message: {error}");
+                            tracing::warn!("failed to send mc message: {error}");
                         }
 
                         subscribers.insert(id,sender);
@@ -76,7 +76,7 @@ impl MinecraftJob {
                 },
                 unsub = unsub_task => {
                     if let Some(id) = unsub {
-                        println!("unsubbing {id:?} to minecraft");
+                        tracing::debug!("unsubbing {id:?} from minecraft");
                         subscribers.remove(&id);
                     }
                 }
@@ -87,7 +87,7 @@ impl MinecraftJob {
                                 .send(current_server_status.to_status_message().into())
                                 .await
                             {
-                                println!("failed to send mc message: {error}, unsubbing");
+                                tracing::warn!("failed to send mc message: {error}, unsubbing");
                                 ids_to_unsub.push(*id);
                             }
                         }

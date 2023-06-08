@@ -27,7 +27,7 @@ pub async fn ws_handler(
     } else {
         String::from("Unknown browser")
     };
-    println!("`{user_agent}` at {addr} connected.");
+    tracing::debug!("`{user_agent}` at {addr} connected.");
     // finalize the upgrade process by returning upgrade callback.
     // we can customize the callback by sending additional info such as address.
     ws.on_upgrade(move |socket| handle_socket(socket, addr, manager))
@@ -55,7 +55,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, manager: Manager)
             .await;
     }
 
-    println!("websocket context {who} destroyed");
+    tracing::debug!("websocket context {who} destroyed");
 }
 
 async fn handle_communication_with_manager(
@@ -86,7 +86,7 @@ async fn handle_communication_with_manager(
                     ))
                     .await
                 {
-                    println!("failed sending info to websocket: {error}");
+                    tracing::error!("failed sending info to websocket: {error}");
                     break;
                 }
             }
@@ -121,7 +121,9 @@ async fn handle_communication_with_manager(
                                     command: _,
                                     channel,
                                 } => {
-                                    println!("trying to assign a receiver to {channel:?} channel");
+                                    tracing::debug!(
+                                        "trying to assign a receiver to {channel:?} channel"
+                                    );
                                 }
                                 WebsocketCommand::Unknown => {}
                             }
@@ -130,7 +132,7 @@ async fn handle_communication_with_manager(
                         break;
                     }
                 }
-                Err(error) => println!("websocket receive error: {error}"),
+                Err(error) => tracing::error!("websocket receive error: {error}"),
             }
         }
     });
@@ -185,12 +187,13 @@ fn process_message(msg: Message) -> ControlFlow<(), WebsocketCommand> {
     match msg {
         Message::Close(c) => {
             if let Some(cf) = c {
-                println!(
+                tracing::debug!(
                     "websocket sent close with code {} and reason `{}`",
-                    cf.code, cf.reason
+                    cf.code,
+                    cf.reason
                 );
             } else {
-                println!("somehow sent close message without CloseFrame");
+                tracing::warn!("somehow sent close message without CloseFrame");
             }
             ControlFlow::Break(())
         }
@@ -210,16 +213,16 @@ async fn ping_websocket(
     who: &SocketAddr,
 ) -> ControlFlow<(), WebsocketCommand> {
     if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
-        println!("Pinged {}...", who);
+        tracing::debug!("Pinged {}...", who);
     } else {
-        println!("Could not send ping {}!", who);
+        tracing::warn!("Could not send ping {}!", who);
         return ControlFlow::Break(());
     }
 
     if let Some(Ok(msg)) = socket.recv().await {
         process_message(msg)
     } else {
-        println!("client {who} abruptly disconnected");
+        tracing::warn!("client {who} abruptly disconnected");
         ControlFlow::Break(())
     }
 }
