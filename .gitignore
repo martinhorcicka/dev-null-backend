@@ -1,2 +1,4 @@
 /target
 .env
+deploy.ps1
+deploy.sh
