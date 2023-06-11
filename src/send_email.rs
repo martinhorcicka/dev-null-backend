@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::{error::Error, response::Response};
 
 pub fn send_email(data: SendEmailData) -> Response<()> {
+    tracing::debug!("sending email: {:?}", data);
     match send_email_impl(data) {
         Ok(_) => Response::ok(()),
         Err(error) => Response::err(error),
