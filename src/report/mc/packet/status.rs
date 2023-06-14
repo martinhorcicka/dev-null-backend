@@ -44,18 +44,18 @@ pub struct StatusResponse {
 
 #[derive(Deserialize, Serialize)]
 pub struct Description {
-    text: String,
+    pub text: String,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct Players {
-    max: i32,
-    online: i32,
+    pub max: i32,
+    pub online: i32,
 }
 #[derive(Deserialize, Serialize)]
 pub struct Version {
-    name: String,
-    protocol: Varint,
+    pub name: String,
+    pub protocol: Varint,
 }
 
 #[derive(Serialize)]
