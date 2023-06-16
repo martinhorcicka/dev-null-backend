@@ -78,17 +78,15 @@ async fn handle_communication_with_manager(
 
     let manager_sender = send_to_sink.clone();
     tokio::spawn(async move {
-        loop {
-            if let Some(response) = sub_rx.recv().await {
-                if let Err(error) = manager_sender
-                    .send(Message::Text(
-                        serde_json::to_string(&response).expect("should always parse successfully"),
-                    ))
-                    .await
-                {
-                    tracing::error!("failed sending info to websocket: {error}");
-                    break;
-                }
+        while let Some(response) = sub_rx.recv().await {
+            if let Err(error) = manager_sender
+                .send(Message::Text(
+                    serde_json::to_string(&response).expect("should always parse successfully"),
+                ))
+                .await
+            {
+                tracing::error!("failed sending info to websocket: {error}");
+                break;
             }
         }
     });
