@@ -86,6 +86,7 @@ impl MinecraftJob {
             for id in ids_to_unsub.iter() {
                 subscribers.remove(id);
             }
+            ids_to_unsub.clear();
 
             let sub_task = sub_rx.recv();
             let unsub_task = unsub_rx.recv();
