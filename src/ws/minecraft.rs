@@ -233,7 +233,19 @@ impl MinecraftServerStatus {
             players: status.players.into(),
             version: status.version.name,
             favicon: status.favicon,
-            mods: status.forge_data.d.mods,
+            mods: status
+                .forge_data
+                .d
+                .mods
+                .into_iter()
+                .map(|(mod_name, mod_version)| {
+                    if mod_version.is_empty() {
+                        (mod_name, "not specified".into())
+                    } else {
+                        (mod_name, mod_version)
+                    }
+                })
+                .collect(),
         };
 
         if online_players_changed {
